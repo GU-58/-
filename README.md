@@ -4,7 +4,7 @@
 
 ## 开始使用
 
-需要安装 Node.js 20 或更高版本。项目已预设 DeepSeek 的兼容接口地址和模型名。先把 `.env.example` 复制为 `.env.local`，再填入你自己的 API Key：
+需要安装 Node.js 22.12 或更高版本。项目已预设 DeepSeek 的兼容接口地址和模型名。先把 `.env.example` 复制为 `.env.local`，再填入你自己的 API Key：
 
 ```env
 AI_BASE_URL=https://api.deepseek.com
