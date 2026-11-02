@@ -4,15 +4,21 @@
 
 ## 开始使用
 
-需要安装 Node.js 20 或更高版本。先复制 `.env.example` 为 `.env.local`，再填写模型服务信息：
+需要安装 Node.js 20 或更高版本。项目已预设 DeepSeek 的兼容接口地址和模型名。先把 `.env.example` 复制为 `.env.local`，再填入你自己的 API Key：
 
 ```env
-AI_BASE_URL=https://api.openai.com/v1
-AI_API_KEY=你的模型服务密钥
-AI_MODEL=你的服务支持的模型名称
+AI_BASE_URL=https://api.deepseek.com
+AI_API_KEY=你的 DeepSeek API Key
+AI_MODEL=deepseek-flash
 ```
 
-`AI_BASE_URL` 和 `AI_MODEL` 需按你选择的 OpenAI 兼容服务填写。API Key 只放在 `.env.local`，不要填进网页、提交到 Git 或分享给他人。
+Windows PowerShell 复制配置：
+
+```powershell
+Copy-Item .env.example .env.local
+```
+
+从 [DeepSeek 开放平台](https://platform.deepseek.com/api_keys)创建 API Key 并填入 `.env.local`。密钥只保存在本机，不要发到聊天、网页，也不要提交到 Git。
 
 ```sh
 npm install
@@ -41,4 +47,4 @@ npm run build
 
 ## 接入模型
 
-服务端支持兼容 OpenAI Chat Completions 协议的模型提供商。使用 `.env.local` 配置基础 URL、API Key 和模型名称。`server/app.mjs` 中的提示词可以按写作风格调整；不要在前端代码中保存或传输服务端 API Key。
+服务端支持兼容 OpenAI Chat Completions 协议的模型提供商，当前默认预设 DeepSeek。若改用其他服务，请修改 `.env.local` 中的基础 URL、API Key 和模型名称。`server/app.mjs` 中的提示词可以按写作风格调整；不要在前端代码中保存或传输服务端 API Key。
