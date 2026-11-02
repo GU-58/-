@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  createUnconfiguredWriter,
+  createApiWriter,
   ModelNotConfiguredError,
   type ChapterRequest,
 } from "./model";
@@ -8,6 +8,8 @@ import { createProjectStore } from "./storage";
 import { createNovelProject, type NovelProject, type OutlineChapter } from "./types";
 
 type WorkspaceView = "outline" | "chapters";
+type ModelConnection = "checking" | "configured" | "unconfigured" | "unavailable";
+type Generating = "outline" | "chapter" | null;
 
 interface InitialState {
   projects: NovelProject[];
@@ -54,7 +56,9 @@ export default function App() {
   const [storageReady, setStorageReady] = useState(initialState.storageReady);
   const [storageError, setStorageError] = useState(initialState.storageError);
   const [notice, setNotice] = useState<string | null>(null);
-  const writer = useMemo(() => createUnconfiguredWriter(), []);
+  const [modelConnection, setModelConnection] = useState<ModelConnection>("checking");
+  const [generating, setGenerating] = useState<Generating>(null);
+  const writer = useMemo(() => createApiWriter(), []);
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
   const activeChapter =
     activeProject?.outlineChapters.find(
@@ -74,6 +78,22 @@ export default function App() {
       setStorageReady(false);
     }
   }, [projects, storageReady]);
+
+  useEffect(() => {
+    let active = true;
+    writer
+      .getStatus()
+      .then(({ configured }) => {
+        if (active) setModelConnection(configured ? "configured" : "unconfigured");
+      })
+      .catch(() => {
+        if (active) setModelConnection("unavailable");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [writer]);
 
   function updateActiveProject(
     update: (project: NovelProject) => NovelProject,
@@ -137,8 +157,15 @@ export default function App() {
   }
 
   async function generateOutline() {
-    if (!activeProject) return;
+    if (!activeProject || generating) return;
+    if (
+      activeProject.outlineChapters.length > 0 &&
+      !window.confirm("重新生成会替换当前大纲；已有章节正文会保留在对应章节中。确定继续吗？")
+    ) {
+      return;
+    }
 
+    setGenerating("outline");
     try {
       const result = await writer.generateOutline({
         title: activeProject.title,
@@ -149,8 +176,14 @@ export default function App() {
       updateActiveProject((project) => ({
         ...project,
         outline: result.summary,
-        outlineChapters: result.chapters,
-        activeChapterId: result.chapters[0]?.id ?? null,
+        outlineChapters: result.chapters.map((chapter, index) => ({
+          ...chapter,
+          id: project.outlineChapters[index]?.id ?? chapter.id,
+        })),
+        activeChapterId:
+          result.chapters.length > 0
+            ? project.outlineChapters[0]?.id ?? result.chapters[0].id
+            : null,
       }));
       setNotice(null);
     } catch (error) {
@@ -159,11 +192,21 @@ export default function App() {
           ? error.message
           : `大纲生成失败：${errorText(error)}`,
       );
+    } finally {
+      setGenerating(null);
     }
   }
 
   async function generateChapter() {
-    if (!activeProject || !activeChapter) return;
+    if (!activeProject || !activeChapter || generating) return;
+    if (
+      activeProject.chapters[activeChapter.id]?.trim() &&
+      modelConnection === "configured" &&
+      !window.confirm("重新生成会替换当前章节正文，确定继续吗？")
+    ) {
+      return;
+    }
+
     const chapterIndex = activeProject.outlineChapters.findIndex(
       (chapter) => chapter.id === activeChapter.id,
     );
@@ -180,6 +223,7 @@ export default function App() {
           : "",
     };
 
+    setGenerating("chapter");
     try {
       const content = await writer.generateChapter(request);
       updateActiveProject((project) => ({
@@ -193,8 +237,19 @@ export default function App() {
           ? error.message
           : `章节生成失败：${errorText(error)}`,
       );
+    } finally {
+      setGenerating(null);
     }
   }
+
+  const modelStatusText =
+    modelConnection === "configured"
+      ? "AI 服务已连接"
+      : modelConnection === "checking"
+        ? "正在检查 AI 服务"
+        : modelConnection === "unavailable"
+          ? "AI 服务无法连接"
+          : "AI 服务未配置";
 
   const completedChapters = activeProject
     ? activeProject.outlineChapters.filter(
@@ -416,10 +471,20 @@ export default function App() {
                       rows={4}
                     />
 
-                    <button className="button button-primary generate-button" onClick={generateOutline}>
-                      <span aria-hidden="true">✦</span>
-                      生成故事大纲
-                      <span className="button-subtle">模型未接入</span>
+                    <button
+                      className="button button-primary generate-button"
+                      onClick={generateOutline}
+                      disabled={generating !== null}
+                    >
+                      {generating === "outline" ? (
+                        <span className="loading-spinner" aria-hidden="true" />
+                      ) : (
+                        <span aria-hidden="true">✦</span>
+                      )}
+                      {generating === "outline" ? "AI 正在构思大纲…" : "AI 生成故事大纲"}
+                      {modelConnection !== "configured" && (
+                        <span className="button-subtle">需要配置</span>
+                      )}
                     </button>
                   </section>
 
@@ -498,7 +563,7 @@ export default function App() {
                       <div className="outline-empty">
                         <span className="outline-empty-mark" aria-hidden="true">✳</span>
                         <strong>这里会成为故事的路线图</strong>
-                        <span>可以先添加章节手动规划，也可以等模型服务接入后生成大纲。</span>
+                        <span>可以先手动规划章节，也可以配置 AI 服务后生成故事大纲。</span>
                         <button className="text-button" onClick={addChapter}>
                           + 添加第一章
                         </button>
@@ -621,11 +686,26 @@ export default function App() {
                           <button
                             className="button button-primary"
                             onClick={generateChapter}
-                            title="接入模型服务后即可生成章节"
+                            disabled={generating !== null}
+                            title={
+                              activeProject.chapters[activeChapter.id]?.trim()
+                                ? "重新生成会替换现有正文"
+                                : "根据小说设定和章节大纲生成正文"
+                            }
                           >
-                            <span aria-hidden="true">✦</span>
-                            生成本章
-                            <span className="button-subtle">模型未接入</span>
+                            {generating === "chapter" ? (
+                              <span className="loading-spinner" aria-hidden="true" />
+                            ) : (
+                              <span aria-hidden="true">✦</span>
+                            )}
+                            {generating === "chapter"
+                              ? "AI 正在撰写本章…"
+                              : activeProject.chapters[activeChapter.id]?.trim()
+                                ? "AI 重新生成本章"
+                                : "AI 生成本章"}
+                            {modelConnection !== "configured" && generating !== "chapter" && (
+                              <span className="button-subtle">需要配置</span>
+                            )}
                           </button>
                         </div>
                       </>
@@ -649,12 +729,18 @@ export default function App() {
               <div className="model-note">
                 <span className="model-note-icon" aria-hidden="true">✦</span>
                 <div>
-                  <strong>模型服务暂未接入</strong>
+                  <strong>{modelStatusText}</strong>
                   <span>
-                    目前可以手动编辑大纲和章节；指定模型服务后，即可启用 AI 生成。
+                    {modelConnection === "configured"
+                      ? "生成时会将故事设定和大纲发送至你配置的模型服务。"
+                      : modelConnection === "unavailable"
+                        ? "请确认服务端正在运行，并检查 .env.local 配置。"
+                        : "填写 .env.local 中的模型地址、名称和 API Key，然后重启应用。"}
                   </span>
                 </div>
-                <span className="model-note-tag">待配置</span>
+                <span className="model-note-tag">
+                  {modelConnection === "configured" ? "已连接" : "配置指南见 README"}
+                </span>
               </div>
             </div>
           </>

@@ -576,6 +576,26 @@ textarea:focus-visible {
   transform: translateY(1px);
 }
 
+.button:disabled {
+  cursor: wait;
+  opacity: 0.78;
+}
+
+.loading-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 750ms linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .button-primary {
   background: #587d68;
   color: white;
